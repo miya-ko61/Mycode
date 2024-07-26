@@ -13,10 +13,10 @@ factorial_design = list(itertools.product(*factors.values()))
 
 # 转换为DataFrame并重复每个实验三次
 df = pd.DataFrame(factorial_design, columns=factors.keys())
-df_repeated = pd.concat([df] * 3, ignore_index=True)
+df_repeated = pd.concat([df]*3, ignore_index=True)
 
 # 添加实验次序列
-df_repeated["实验次序"] = list(itertools.chain.from_iterable([[1, 2, 3] for _ in range(len(factorial_design))]))
+df_repeated["实验次序"] = [i % 3 + 1 for i in range(len(df_repeated))]
 
 # 添加评判指标列，但不填入数据
 df_repeated["拉力"] = pd.NA
