@@ -1,6 +1,5 @@
 import pandas as pd
 import itertools
-import numpy as np
 
 # 定义因子及其水平
 factors = {
@@ -12,19 +11,17 @@ factors = {
 # 创建全因子实验设计
 factorial_design = list(itertools.product(*factors.values()))
 
-# 转换为DataFrame
+# 转换为DataFrame并重复每个实验三次
 df = pd.DataFrame(factorial_design, columns=factors.keys())
-
-# 重复每个实验三次
 df_repeated = pd.concat([df] * 3, ignore_index=True)
 
-# 添加随机顺序列
-df_repeated["运行顺序"] = np.random.permutation(len(df_repeated)) + 1
+# 添加实验次序列
+df_repeated["实验次序"] = list(itertools.chain.from_iterable([[1, 2, 3] for _ in range(len(factorial_design))]))
 
 # 添加评判指标列，但不填入数据
-df_repeated["拉力"] = np.nan
-df_repeated["溶深"] = np.nan
-df_repeated["溶宽"] = np.nan
+df_repeated["拉力"] = pd.NA
+df_repeated["溶深"] = pd.NA
+df_repeated["溶宽"] = pd.NA
 
 # 保存为CSV文件
 df_repeated.to_csv("/mnt/data/doe_experiment_design.csv", index=False)
