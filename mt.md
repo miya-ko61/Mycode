@@ -92,3 +92,64 @@ grid on;
    - 脚本在处理每个频率点时都会更新并叠加波德图，因此你可以在一张图上看到整个频率范围内的系统响应。
 
 确保你的 Excel 文件 `data.xlsx` 的列名与脚本中的变量名称相对应。如果列名不同，你需要相应地调整变量的提取部分。如果你有其他问题或需要进一步调整脚本，请告知。
+
+% 清除工作区和命令行
+clc;
+clear;
+
+% 读取 Excel 表格数据
+data = readtable('data.xlsx');
+
+% 提取频率、增益和相位数据
+frequency = data.Frequency_Hz;  % 假设表格中的列名为 'Frequency_Hz'
+gain_magnitude = data.Trace_1_Gain_Magnitude_dB;  % 假设表格中的列名为 'Trace_1_Gain_Magnitude_dB'
+gain_phase = data.Trace_2_Gain_Phase;  % 假设表格中的列名为 'Trace_2_Gain_Phase'
+
+% 将dB转换为线性值并计算Gaef
+Gaef = 10.^(gain_magnitude/20) .* cos(deg2rad(gain_phase));
+
+% 创建s变量
+s = tf('s');
+
+% 定义常量（假设这些值不变）
+Cinj = 4700e-12;
+RINJ = 5e7;
+C11 = 8.2e-9;
+R3 = 49.9;
+R5 = 1e3;
+C12 = 4.7e-9;
+R4 = 698;
+R6 = 200;
+L = 1e-7;
+Rs1 = 1000;
+Rs2 = 500;
+Cs = 1e-7;
+
+% 计算输入阻抗Zin
+Zin = (RINJ/(s*Cinj))/(RINJ+1/(s*Cinj));
+
+% 计算 Z1
+Z1 = ((R3+1/(s*C11))*R5)/(R3+1/(s*C11)+R5);
+
+% 计算 Z3
+Z3 = (R4*(s*C12))/(R4+1/(s*C12));
+
+% 初始化总传递函数
+GHZs_total = 0;
+
+% 计算每个频率点的传递函数并累加
+for i = 1:length(frequency)
+    % 计算 GH 和 Zs
+    GH = (1 - Gaef(i)*Z3/(Z1+Z3))/(Zin+Z3+(Z1*Z3/(Z1+Z3)));
+    Zs = s*L + s^2*Cs + (Rs1*Rs2)/(Rs1+Rs2);
+    GHZs = GH + Zs;
+
+    % 累加每个频率点的结果
+    GHZs_total = GHZs_total + GHZs;
+end
+
+% 波德图绘制
+P = bodeoptions;
+P.FreqUnits = 'Hz';
+bodeplot(GHZs_total, P);
+grid on;
