@@ -1,6 +1,10 @@
-为了在每次循环中打印出所有 `1x1` 传递函数对象的状态，我们可以在 `for` 循环内使用 `disp` 函数来显示 `Z1`, `Z2`, `Z3`, `GH`, `GHZs_total` 等传递函数的内容。你可以将以下代码添加到现有代码中以打印这些对象的状态。
+在你提供的这段代码中，主要的问题依然是传递函数 `GH` 和 `GHZs_total` 没有在每个频率点上独立计算和评估，因此你在循环中累加的实际上是符号性的表达式，而不是在每个频率点上计算得到的具体数值。这会导致波德图绘制时可能不反映各个频率点的实际响应。
 
-### 修改后的代码示例：
+为了确保每个频率点的传递函数被正确评估并累加，需要在循环中对 `Z1`、`Z2`、`Z3`、`GH` 等传递函数对象在具体的频率下进行评估，并将其数值化后再进行累加。
+
+### 改进后的代码
+
+下面的代码对你原有代码进行了一些修改，确保在每个频率点上对传递函数进行数值化评估，并正确累加这些结果。
 
 ```matlab
 % 清除工作区和命令行
@@ -11,19 +15,15 @@ clear;
 disp('正在读取数据...');
 data = readtable('data.xlsx');
 
-% 提取前10个频率、增益和相位数据
-num_points = 10;
-frequency = data.Frequency_Hz(1:num_points);
-gain_magnitude = data.Trace_1_Gain_Magnitude_dB(1:num_points);
-gain_phase = data.Trace_2_Gain_Phase(1:num_points);
+% 提取频率、增益和相位数据
+frequency = data.Frequency_Hz;  % 假设表格中的列名为 'Frequency_Hz'
+gain_magnitude = data.Trace_1_Gain_Magnitude_dB;  % 假设表格中的列名为 'Trace_1_Gain_Magnitude_dB'
+gain_phase = data.Trace_2_Gain_Phase;  % 假设表格中的列名为 'Trace_2_Gain_Phase'
 
 % 将dB转换为线性值并计算Gaef
 Gaef = 10.^(gain_magnitude/20) .* cos(deg2rad(gain_phase));
 
-% 创建s变量
-s = tf('s');
-
-% 定义常量
+% 定义电路元件参数
 Cinj = 4700e-12;  % 注入电容
 RINJ = 5e7;       % 注入电阻
 C11 = 8.2e-9;     % 电容C11
@@ -38,37 +38,31 @@ Rs2 = 500;        % 电阻Rs2
 Cs = 1e-7;        % 电容Cs
 C13 = 47e-9;      % 电容C13
 
-% 计算各电阻和电容的复阻抗
-Zin = RINJ/(1 + s*RINJ*Cinj);  % 输入阻抗
-Z1 = (R3 + 1/(s*C11))*R5 / (R3 + R5 + 1/(s*C11));  % Z1的计算
-Z2 = R6 + 1/(s*C13);  % Z2的计算
-Z3 = R4/(1 + s*R4*C12);  % Z3的计算
-
-% 初始化传递函数对象
-GHZs_total = tf(0);  % 初始化为空的传递函数对象
+% 初始化传递函数结果
+GHZs_total = zeros(1, num_points);
 
 % 创建进度条
 h = waitbar(0, '正在计算传递函数...');
 
-% 计算前10个频率点的传递函数并在每个循环中打印出状态
+% 计算每个频率点的传递函数并累加
+num_points = length(frequency);
 for i = 1:num_points
-    GH = (1 - Gaef(i)*Z3/(Z1 + Z3)) / (Zin + Z3 + (Z1*Z3)/(Z1 + Z3));
+    omega = 2 * pi * frequency(i);  % 计算角频率
+    s = 1j * omega;  % 创建当前频率下的复频率变量
+    
+    % 计算各频率点下的阻抗
+    Zin = RINJ/(1 + s*RINJ*Cinj);
+    Z1 = (R3 + 1/(s*C11))*R5 / (R3 + R5 + 1/(s*C11));
+    Z2 = R6 + 1/(s*C13);
+    Z3 = R4/(1 + s*R4*C12);
     Zs = s*L + s^2*Cs*L/(Rs1 + Rs2);
     
-    % 打印当前传递函数状态
-    disp(['循环第 ', num2str(i), ' 次:']);
-    disp('Z1:'); disp(Z1);
-    disp('Z2:'); disp(Z2);
-    disp('Z3:'); disp(Z3);
-    disp('GH:'); disp(GH);
-    disp('GHZs_total (累加前):'); disp(GHZs_total);
+    % 计算当前频率下的 GH 和总传递函数
+    GH = (1 - Gaef(i)*Z3/(Z1 + Z3)) / (Zin + Z3 + (Z1*Z3)/(Z1 + Z3));
+    
+    % 将当前频率点的结果累加到总结果中
+    GHZs_total(i) = GH + Zs;
 
-    % 将当前频率下的传递函数累加到总传递函数
-    GHZs_total = GHZs_total + (GH + Zs);
-    
-    % 打印累加后的 GHZs_total
-    disp('GHZs_total (累加后):'); disp(GHZs_total);
-    
     % 更新进度条
     waitbar(i / num_points, h);
 end
@@ -76,23 +70,24 @@ end
 % 关闭进度条
 close(h);
 
-% 波德图绘制
+% 绘制波德图
 P = bodeoptions;  % 获取波德图选项
 P.FreqUnits = 'Hz';  % 设置频率单位为Hz
-bodeplot(GHZs_total, P);  % 绘制波德图
+bodeplot(frequency, GHZs_total, P);  % 绘制波德图
 grid on;  % 显示网格
 ```
 
-### 说明：
+### 关键改动说明：
 
-1. **循环内打印状态**：
-   - 每次循环中，在计算和累加传递函数之前和之后，我们使用 `disp` 函数打印出 `Z1`, `Z2`, `Z3`, `GH`, 以及 `GHZs_total` 的当前状态。这样，你可以看到每个传递函数对象在每次循环中的变化。
+1. **频率点的独立评估**：
+   - 在每个频率点上，使用当前的 `s`（复频率变量）计算 `Z1`、`Z2`、`Z3` 等的数值。这样，传递函数在每个频率点上是独立的，并且是基于具体频率的数据。
 
-2. **打印前后状态**：
-   - 特别注意在 `GHZs_total` 累加前和累加后的状态，这样你可以直观地了解传递函数如何随着每个数据点逐步变化和累积。
+2. **累加到数值数组**：
+   - `GHZs_total` 被定义为一个数组，用于存储每个频率点上的计算结果，而不是使用 `tf` 对象来累加符号表达式。
 
-3. **只处理前10个数据点**：
-   - 为了更方便调试和观察，只处理前 10 个数据点，并在每次循环中打印相关信息。
+3. **绘制波德图**：
+   - 在波德图绘制时，`bodeplot` 函数直接使用了 `frequency` 和 `GHZs_total` 的数值形式，而不是符号表达式。
 
-### 运行效果：
-当你运行这个脚本时，MATLAB 命令窗口会显示每次循环的详细信息，包括每个传递函数在累加前后的状态。这将帮助你更好地理解 MATLAB 中传递函数对象的动态行为，以及它们如何在循环中随着数据点变化而逐步构建。
+### 总结：
+
+通过这次调整，程序在每个频率点上计算具体的传递函数值，并将这些结果累加到一个数值数组中。这样做可以确保每个频率点的传递函数计算是独立且正确的，最终生成的波德图能够准确地反映电路的频率响应。如果你运行这个改进后的代码，应该会看到每个频率点上的传递函数响应，并且波德图能够反映出实际的频率响应特性。
